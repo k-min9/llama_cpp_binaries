@@ -1,0 +1,51 @@
+# llama-server 바이너리 휠 빌드 → Release 업로드 (Windows 전용)
+#
+# 사용: Actions 탭 → build-llama-wheel → "Run workflow" → b태그 입력.
+#   서브모듈/커밋 없이 태그 입력만으로 빌드→릴리스 완결 (재현성은 휠 버전 = b태그 번호가 보장).
+# 러너 제약: GPU 없음 — 아키텍처는 감지 없이 고정 리스트로 컴파일 (nvcc는 크로스 컴파일러라 GPU 불필요).
+#   MSVC는 러너 기본 내장. 무료 조건 = Public 저장소. 멀티 아키텍처 빌드 1~2시간 (잡 한도 6시간 이내).
+name: build-llama-wheel
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'llama.cpp 릴리스 태그 (b####)'
+        required: true
+      cuda_archs:
+        description: 'CMAKE_CUDA_ARCHITECTURES'
+        default: '61;70;75;80;86;89;120'       # Pascal(GTX10)~RTX50 (sm_120은 CUDA 12.8+)
+
+permissions:
+  contents: write                              # Release 업로드 권한 (누락 시 403)
+
+jobs:
+  build:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.12' }       # 휠이 py3-none이라 파이썬 버전 무관
+      - uses: Jimver/cuda-toolkit@v0.2.36      # 러너에 CUDA 툴킷 설치 (~10분)
+        with: { cuda: '12.8.1', method: network }   # 지원 버전 목록은 Jimver README 확인
+      - uses: ilammy/msvc-dev-cmd@v1           # "x64 Native Tools" 환경 주입 (nvcc가 cl.exe를 찾게)
+
+      - name: build wheel
+        shell: pwsh
+        run: python build_llama_wheel.py --tag ${{ inputs.tag }} --cuda-archs "${{ inputs.cuda_archs }}"
+
+      # 설치 → import → exe --version 기동까지 확인 (추론 아님 — DLL 동봉 완전성 검증, GPU 불필요)
+      - name: verify wheel
+        shell: pwsh
+        run: |
+          $whl = Get-ChildItem dist\*.whl | Select-Object -First 1
+          pip install $whl.FullName
+          $exe = python -c "import llama_cpp_binaries; print(llama_cpp_binaries.get_binary_path())"
+          & $exe --version
+
+      - uses: softprops/action-gh-release@v2   # b#### 태그로 Release 생성 + 휠 첨부 (자산 한도 파일당 2GB)
+        with:
+          tag_name: ${{ inputs.tag }}
+          name: llama_cpp_binaries ${{ inputs.tag }}
+          body: "llama.cpp ${{ inputs.tag }} / CUDA 12.8 / archs ${{ inputs.cuda_archs }} / py3-none-win_amd64 (클린룸 자체 빌드, 원본 MIT)"
+          files: dist/*.whl

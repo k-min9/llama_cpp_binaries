@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=64", "wheel", "cmake>=3.26"]   # 빌드 격리환경에 자동 설치됨 (시스템 CMake 불필요)
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llama_cpp_binaries"
+dynamic = ["version"]                  # 버전은 setup.py가 계산 (b태그 번호 + VERSION_SUFFIX)
+description = "llama.cpp server 바이너리 휠 (ggml-org/llama.cpp 원본 자체 빌드, Windows 전용)"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+
+[project.urls]
+Source = "https://github.com/ggml-org/llama.cpp"
+
+[tool.setuptools]
+packages = ["llama_cpp_binaries"]
+
+[tool.setuptools.package-data]
+llama_cpp_binaries = ["bin/*"]         # bin 폴더 내용물을 휠에 포함

@@ -1,0 +1,7 @@
+dist/
+work/
+build/
+*.egg-info/
+llama_cpp_binaries/bin/
+__pycache__/
+*.pyc
