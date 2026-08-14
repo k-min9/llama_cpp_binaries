@@ -7,7 +7,7 @@
 
 ## 배포 (기본 경로 — GitHub Actions, 로컬 PC 불필요)
 
-Actions 탭 → `build-llama-wheel` → **Run workflow** → llama.cpp b태그 입력 (예: `b10423`).
+Actions 탭 → `build-llama-wheel` → **Run workflow** 클릭이 전부. **tag를 비워두면 llama.cpp 최신 릴리스 태그를 자동 조회**한다 (특정 버전 재현이 필요할 때만 `b####` 입력).
 
 - 러너가 CUDA 툴킷 설치 → 크로스 컴파일 → 휠 검증(설치+import+`--version` 기동) → 같은 b태그로 Release 생성+휠 첨부까지 완결
 - 서브모듈도 커밋도 불필요 — 태그 입력이 곧 릴리스. GPU 아키텍처는 감지 없이 고정 리스트(`61;70;75;80;86;89;120` = Pascal~RTX50)로 컴파일

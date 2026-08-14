@@ -9,8 +9,8 @@ llama.cpp 원본에서 llama-server 바이너리 휠 자체 빌드 (Windows 전�
  - CMake는 빌드 격리환경에 pip로 자동 조달되지만, MSVC와 CUDA Toolkit(nvcc)은 시스템에 있어야 한다
 
 사용 (로컬 빌드 시 "x64 Native Tools Command Prompt for VS 2022"에서 — CI는 .github/workflows/build_wheel.yml):
-  python build_llama_wheel.py                              # 기본 태그, CUDA, 기본 아키텍처 리스트 (1시간+)
-  python build_llama_wheel.py --tag b10423                 # llama.cpp 릴리스 태그 지정 (새 모델 아키텍처 대응)
+  python build_llama_wheel.py                              # 태그 미지정 = llama.cpp 최신 릴리스 자동 조회, CUDA
+  python build_llama_wheel.py --tag b10423                 # llama.cpp 릴리스 태그 고정 (재현 빌드)
   python build_llama_wheel.py --cuda-archs "86"            # 아키텍처 축소 (빌드 시간 단축용)
   python build_llama_wheel.py --cpu                        # CPU 전용 휠 (+cpu — nvcc/CUDA 불필요)
 산출: dist/llama_cpp_binaries-10423+cu128-py3-none-win_amd64.whl 형태
@@ -23,6 +23,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import urllib.request
 import zipfile
 
 # 콘솔 인코딩 UTF-8 강제 — 한국어 Windows(cp949) 콘솔/파이프에서 print 크래시 방지
@@ -34,7 +35,6 @@ SRC_DIR = os.path.join(BASE_DIR, 'work', 'llama.cpp')          # llama.cpp 클�
 BUILD_DIR = os.path.join(BASE_DIR, 'work', 'build')            # CMake 작업 폴더 (커밋 제외)
 DIST_DIR = os.path.join(BASE_DIR, 'dist')                      # 휠 산출 폴더 (커밋 제외 — Releases 업로드)
 LLAMA_REPO = 'https://github.com/ggml-org/llama.cpp'
-DEFAULT_TAG = 'b10423'                                         # 2026-08-14 기준 최신 릴리스 — 새 모델 아키텍처 필요 시 상향
 DEFAULT_CUDA_ARCHS = '61;70;75;80;86;89;120'                   # Pascal(GTX10)~RTX50 — 감지 없이 고정, 구형 GPU 커버 (sm_120은 CUDA 12.8+)
 
 
@@ -44,6 +44,22 @@ DEFAULT_CUDA_ARCHS = '61;70;75;80;86;89;120'                   # Pascal(GTX10)~R
 def run_cmd(cmd, env=None):
     print(f"$ {' '.join(cmd)}")
     subprocess.run(cmd, check=True, env=env)
+
+
+'''
+llama.cpp 최신 릴리스 태그 조회 — releases/latest가 releases/tag/b####로 리다이렉트되는 것을 이용해
+최종 URL에서 태그를 추출한다 (GitHub API 미사용 = 무인증 레이트리밋 무관, 사내망/CI 공용 IP에서도 안전)
+'''
+def resolve_latest_tag():
+    req = urllib.request.Request(LLAMA_REPO + '/releases/latest', headers={'User-Agent': 'llama-cpp-binaries-builder'})
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            final_url = resp.geturl()  # 예: .../releases/tag/b10423
+    except Exception as e:
+        sys.exit(f'[ERROR] 최신 릴리스 태그 조회 실패({e}) — --tag b#### 로 직접 지정하세요')
+    if '/tag/' not in final_url:
+        sys.exit(f'[ERROR] 최신 릴리스 태그 파싱 실패({final_url}) — --tag b#### 로 직접 지정하세요')
+    return final_url.rsplit('/tag/', 1)[1]
 
 
 '''
@@ -113,7 +129,7 @@ def verify_wheel(wheel_path, bundle_cuda):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='llama-server 바이너리 자체 휠 빌드 (Windows 전용)')
-    parser.add_argument('--tag', default=DEFAULT_TAG, help='llama.cpp 릴리스 태그 (b####)')
+    parser.add_argument('--tag', default='', help='llama.cpp 릴리스 태그 (b####). 생략/빈값 = 최신 릴리스 자동 조회')
     parser.add_argument('--cuda-archs', default=DEFAULT_CUDA_ARCHS, help='CMAKE_CUDA_ARCHITECTURES (고정 리스트 — 감지 없음)')
     parser.add_argument('--cpu', action='store_true', help='CPU 전용 휠 (CUDA 미포함)')
     args = parser.parse_args()
@@ -135,20 +151,26 @@ if __name__ == '__main__':
     if not shutil.which('cl'):
         print('[WARN] cl.exe가 PATH에 없습니다 — CUDA 빌드는 "x64 Native Tools Command Prompt for VS 2022"에서 실행해야 합니다')
 
-    # 1. llama.cpp 소스 준비 (태그 고정 클론)
-    prepare_source(args.tag)
+    # 1. 태그 결정 — 미지정 시 llama.cpp 최신 릴리스 자동 조회 (사람이 태그를 찾아올 필요 없음)
+    tag = args.tag.strip()
+    if not tag:
+        tag = resolve_latest_tag()
+        print(f"[INFO] 최신 릴리스 태그 자동 선택: {tag}")
 
-    # 2. 휠 버전 결정 — llama.cpp 상류 버전 정렬: b태그의 빌드 번호(단조 증가) 그대로, 아니면 날짜 폴백
-    matched = re.match(r'^b(\d+)$', args.tag)
+    # 2. llama.cpp 소스 준비 (태그 고정 클론)
+    prepare_source(tag)
+
+    # 3. 휠 버전 결정 — llama.cpp 상류 버전 정렬: b태그의 빌드 번호(단조 증가) 그대로, 아니면 날짜 폴백
+    matched = re.match(r'^b(\d+)$', tag)
     if matched:
         base_version = matched.group(1)
     else:
         today = datetime.date.today()
         base_version = f"{today.year}.{today.month}.{today.day}"
     version = f"{base_version}+{variant}"  # 예: 10423+cu128 — 파일명만으로 상류 버전+CUDA 변형 식별
-    print(f"[INFO] 휠 버전: {version} (llama.cpp {args.tag})")
+    print(f"[INFO] 휠 버전: {version} (llama.cpp {tag})")
 
-    # 3. 빌드 환경변수 구성 — setup.py가 읽는 값들 (CMAKE_ARGS/VERSION_SUFFIX/BUNDLE_CUDA + 절대경로 주입)
+    # 4. 빌드 환경변수 구성 — setup.py가 읽는 값들 (CMAKE_ARGS/VERSION_SUFFIX/BUNDLE_CUDA + 절대경로 주입)
     env = os.environ.copy()
     # VS 제너레이터는 CUDA의 "Visual Studio 통합" 설치를 요구해 CI 러너에서 "No CUDA toolset found"로 실패한다
     # → nvcc+cl을 직접 부르는 Ninja 고정 (ninja는 pyproject build requires로 격리환경에 자동 조달, oobabooga 동일)
@@ -165,11 +187,11 @@ if __name__ == '__main__':
         cuda_args = f"-DGGML_CUDA=on -DCMAKE_CUDA_ARCHITECTURES={args.cuda_archs}"
         env['CMAKE_ARGS'] = (env.get('CMAKE_ARGS', '') + ' ' + cuda_args).strip()
 
-    # 4. 휠 빌드 — pip가 격리환경에 setuptools/cmake를 자동 조달 (pip 21.3+ 로컬 폴더 제자리 빌드 전제)
+    # 5. 휠 빌드 — pip가 격리환경에 setuptools/cmake/ninja를 자동 조달 (pip 21.3+ 로컬 폴더 제자리 빌드 전제)
     os.makedirs(DIST_DIR, exist_ok=True)
     run_cmd([sys.executable, '-m', 'pip', 'wheel', BASE_DIR, '--no-deps', '-w', DIST_DIR], env=env)
 
-    # 5. 산출 휠 검증
+    # 6. 산출 휠 검증
     wheel_name = f"llama_cpp_binaries-{version}-py3-none-win_amd64.whl"
     wheel_path = os.path.join(DIST_DIR, wheel_name)
     if not os.path.exists(wheel_path):
@@ -177,6 +199,11 @@ if __name__ == '__main__':
         sys.exit(1)
     if not verify_wheel(wheel_path, not args.cpu):
         sys.exit(1)
+
+    # 7. CI 연동 — 확정 태그/휠 파일명을 GitHub Actions 스텝 출력으로 전달 (Release 태그명에 사용)
+    if os.environ.get('GITHUB_OUTPUT'):
+        with open(os.environ['GITHUB_OUTPUT'], 'a', encoding='utf-8') as f:
+            f.write(f"llama_tag={tag}\nwheel_name={wheel_name}\n")
 
     size_mb = os.path.getsize(wheel_path) / 1024 / 1024
     print(f"\n[OK] {wheel_path} ({size_mb:.1f}MB)")
