@@ -25,6 +25,8 @@ pip install https://github.com/<계정>/llama_cpp_binaries/releases/download/b10
 
 ## 로컬 빌드 (선택 — MSVC + CUDA Toolkit, "x64 Native Tools Command Prompt for VS 2022"에서)
 
+CMake/Ninja는 pip 빌드 격리환경에 자동 조달되므로 시스템 설치 불요 — 필요한 것은 MSVC(cl)와 CUDA Toolkit(nvcc)뿐. 제너레이터는 Ninja 고정(VS 제너레이터는 CUDA VS 통합 요구로 CI에서 실패).
+
 ```
 python build_llama_wheel.py                    # 기본 태그, CUDA, 고정 아키텍처 리스트
 python build_llama_wheel.py --tag b10423       # 태그 지정

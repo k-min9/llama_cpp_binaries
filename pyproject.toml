@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=64", "wheel", "cmake>=3.26"]   # 빌드 격리환경에 자동 설치됨 (시스템 CMake 불필요)
+requires = ["setuptools>=64", "wheel", "cmake>=3.26", "ninja"]   # 빌드 격리환경에 자동 설치됨 (시스템 CMake/Ninja 불필요)
 build-backend = "setuptools.build_meta"
 
 [project]

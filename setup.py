@@ -51,6 +51,7 @@ class CMakeBuild(build_ext):
             '-DGGML_NATIVE=OFF',             # 빌드 머신 CPU 과최적화 방지 (배포 빌드 필수)
             '-DGGML_BACKEND_DL=ON',          # 백엔드 동적 로딩 — CUDA 사용 불가 환경에서 CPU로 완전 폴백 (oobabooga/공식 배포 빌드와 동일 정책)
             '-DGGML_CPU_ALL_VARIANTS=ON',    # CPU 세대별(sandybridge~alderlake 등) 커널 DLL 전부 생성 → 런타임에 최적 변형 자동 선택
+            '-DLLAMA_CURL=OFF',              # 모델 URL 다운로드 기능 미사용 — curl 의존 차단 (본체는 로컬 경로만 전달)
         ]
         if os.environ.get('CMAKE_ARGS'):
             cmake_args += [arg for arg in os.environ['CMAKE_ARGS'].split(' ') if arg]

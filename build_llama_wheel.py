@@ -150,6 +150,9 @@ if __name__ == '__main__':
 
     # 3. 빌드 환경변수 구성 — setup.py가 읽는 값들 (CMAKE_ARGS/VERSION_SUFFIX/BUNDLE_CUDA + 절대경로 주입)
     env = os.environ.copy()
+    # VS 제너레이터는 CUDA의 "Visual Studio 통합" 설치를 요구해 CI 러너에서 "No CUDA toolset found"로 실패한다
+    # → nvcc+cl을 직접 부르는 Ninja 고정 (ninja는 pyproject build requires로 격리환경에 자동 조달, oobabooga 동일)
+    env.setdefault('CMAKE_GENERATOR', 'Ninja')
     env['LLAMA_WHEEL_VERSION'] = base_version
     env['VERSION_SUFFIX'] = f"+{variant}"
     env['LLAMA_CPP_SRC'] = SRC_DIR
